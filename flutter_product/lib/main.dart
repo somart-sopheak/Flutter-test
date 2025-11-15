@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart'
 import 'package:provider/provider.dart';
 
 import 'providers/product_provider.dart';
-import 'screens/product_list_screen.dart';
+import 'presentation/screens/product_list_screen.dart';
 import 'config/theme.dart';
 import 'services/api_service.dart';
 

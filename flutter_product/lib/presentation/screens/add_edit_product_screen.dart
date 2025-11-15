@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/product.dart';
-import '../providers/product_provider.dart';
+import '../../models/product.dart';
+import '../../providers/product_provider.dart';
 
 class AddEditProductScreen extends StatefulWidget {
   final Product? product;
@@ -45,8 +45,36 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
     final prov = Provider.of<ProductProvider>(context, listen: false);
     bool ok;
     if (widget.product == null) {
+      // Confirm before creating
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder:
+            (_) => AlertDialog(
+              title: const Text('Confirm Create'),
+              content: Text(
+                "Create product \"$name\" with \$${price.toStringAsFixed(2)} and $stock units?",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Create'),
+                ),
+              ],
+            ),
+      );
+      if (confirm != true) return;
+
       ok = await prov.addProduct(
-        Product(name: name, price: price, stock: stock),
+        Product(
+          name: name,
+          price: price,
+          stock: stock,
+          createdAt: DateTime.now(),
+        ),
       );
     } else {
       final updated = widget.product!.copyWith(
@@ -209,6 +237,11 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
                       return null;
                     },
                   ),
+                  const SizedBox(height: 24),
+
+                  // Type Field
+                  // Type field removed as requested
+                  const SizedBox(height: 8),
                   const SizedBox(height: 32),
 
                   // Submit Button

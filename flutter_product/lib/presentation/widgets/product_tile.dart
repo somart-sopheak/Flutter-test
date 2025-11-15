@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../models/product.dart';
+import '../../models/product.dart';
 
 typedef OnEdit = void Function(Product p);
 typedef OnDelete = void Function(Product p);

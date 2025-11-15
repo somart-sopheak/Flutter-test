@@ -1,40 +1,110 @@
+// backend/src/controllers/product.controller.js
 const ProductModel = require('../models/product.model');
-const { successResponse, errorResponse } = require('../utils/response');
+const { successResponse, errorResponse, paginatedResponse } = require('../utils/response');
 
 class ProductController {
   /**
-   * Get all products or product by ID
-   * GET /products or GET /products?id=1
+   * Get all products (paginated) or product by ID
+   * GET /products
+   * GET /products?id=1
+   * GET /products?page=1&limit=10&q=...&sortBy=...
    */
-  static async getProducts(req, res, next) {
-    try {
-      // FIX: Check both query and params for robustness
-      const id = req.query.id || req.params.id;
+static async getProducts(req, res, next) {
+  try {
+    const id = req.query.id || req.params.id;
 
-      if (id) {
-        // Get single product by ID
-        const product = await ProductModel.getProductById(parseInt(id));
-        
-        if (!product) {
-          return errorResponse(res, 'Product not found', 404);
-        }
-        
-        return successResponse(res, product, 'Product retrieved successfully');
-      } else {
-        // Get all products
-        const products = await ProductModel.getAllProducts();
-        
-        return successResponse(
-          res, 
-          products, 
-          'Products retrieved successfully',
-          { count: products.length }
-        );
+    // ----------------------------
+    // 🔹 GET PRODUCT BY ID
+    // ----------------------------
+    if (id) {
+      const product = await ProductModel.getProductById(parseInt(id));
+      if (!product) {
+        return errorResponse(res, 'Product not found', 404);
       }
-    } catch (error) {
-      next(error);
+      return successResponse(res, product, 'Product retrieved successfully');
     }
+
+    // ----------------------------
+    // 🔹 PAGINATION & FILTER LOGIC
+    // ----------------------------
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    const all = parseInt(req.query.all);   // <-- important
+    
+    // Filters
+    const searchTerm = req.query.q || '';
+    const { 
+      priceMin, priceMax, 
+      stockMin, stockMax, 
+      dateFrom, dateTo 
+    } = req.query;
+
+    // Sorting
+    let sortBy = req.query.sortBy || 'PRODUCTID';
+    const sortOrder = req.query.sortOrder || 'DESC';
+
+    // Map frontend key to database column
+    if (sortBy === 'price') sortBy = 'PRICE';
+    if (sortBy === 'stock') sortBy = 'STOCK';
+
+    const filters = {
+      searchTerm,
+      priceMin: priceMin ? parseFloat(priceMin) : null,
+      priceMax: priceMax ? parseFloat(priceMax) : null,
+      stockMin: stockMin ? parseInt(stockMin) : null,
+      stockMax: stockMax ? parseInt(stockMax) : null,
+      dateFrom: dateFrom || null,
+      dateTo: dateTo || null
+    };
+
+    // ----------------------------
+    // 🔹 GET ALL PRODUCTS (no pagination)
+    // ----------------------------
+    if (all === 1) {
+      const products = await ProductModel.getAllProducts({
+        ...filters,
+        sortBy,
+        sortOrder
+      });
+
+      return successResponse(
+        res,
+        products,
+        'All products retrieved successfully'
+      );
+    }
+
+    // ----------------------------
+    // 🔹 PAGINATED PRODUCTS
+    // ----------------------------
+    const products = await ProductModel.getPaginatedProducts({
+      page,
+      limit,
+      ...filters,
+      sortBy,
+      sortOrder
+    });
+
+    const total = await ProductModel.getTotalProductCount(filters);
+
+    return paginatedResponse(
+      res,
+      products,
+      page,
+      limit,
+      total,
+      false,
+      'Products retrieved successfully'
+    );
+
+  } catch (error) {
+    next(error);
   }
+}
+
+
+  // ... (keep all other methods: createProduct, updateProduct, deleteProduct, searchProducts)
+  // ... (the searchProducts controller is now mostly handled by getProducts, but we can leave it)
 
   /**
    * Create new product
