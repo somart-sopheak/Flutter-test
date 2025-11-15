@@ -1,6 +1,6 @@
 
 Project Summary
-This is a product management app. It uses Flutter for the app and Node.js for the server.
+This is a product management app. It uses Flutter for the app and Node.js with Express.js for the server.
 
 App Features (Flutter)
 Add, Edit, Delete Products: You can create, read, update, and delete products.
