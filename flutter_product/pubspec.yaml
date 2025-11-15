@@ -43,6 +43,8 @@ dependencies:
   csv: ^5.0.0
   path_provider: ^2.0.15
   infinite_scroll_pagination: ^5.1.1
+  connectivity_plus: ^6.0.3
+  open_filex: ^4.4.0
 
 dev_dependencies:
   flutter_test:

@@ -7,9 +7,12 @@ import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:csv/csv.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'package:open_filex/open_filex.dart'; // <-- Import for opening files
 
+import '../../models/product.dart'; // Import the model
 import '../../providers/product_provider.dart';
 import '../widgets/product_tile.dart';
+import '../widgets/skeleton.dart'; // <-- Import the skeleton
 import 'add_edit_product_screen.dart';
 
 class ProductListScreen extends StatefulWidget {
@@ -43,7 +46,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
 
   void _onScroll() {
     final prov = Provider.of<ProductProvider>(context, listen: false);
-    if (!prov.hasMore) return;
     if (_scrollController.position.maxScrollExtent -
             _scrollController.position.pixels <=
         200) {
@@ -61,17 +63,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
     });
   }
 
-  // Helper method to get the Downloads directory path
   Future<String> _getDownloadsPath() async {
     if (Platform.isAndroid) {
-      // For Android, use /storage/emulated/0/Download
       return '/storage/emulated/0/Download';
     } else if (Platform.isIOS) {
-      // For iOS, use the app's documents directory (iOS doesn't have a shared Downloads folder)
       final dir = await getApplicationDocumentsDirectory();
       return dir.path;
     } else {
-      // For other platforms (Desktop), use the Downloads directory
       final dir = await getDownloadsDirectory();
       return dir?.path ?? (await getApplicationDocumentsDirectory()).path;
     }
@@ -79,19 +77,21 @@ class _ProductListScreenState extends State<ProductListScreen> {
 
   Future<void> _showFilterSheet() async {
     final prov = Provider.of<ProductProvider>(context, listen: false);
+
     double tempMin = prov.priceMinFilter ?? prov.minPrice;
     double tempMax = prov.priceMaxFilter ?? prov.maxPrice;
     RangeValues priceRange = RangeValues(tempMin, tempMax);
+
     int tempStockMin = prov.stockMinFilter ?? prov.minStock;
     int tempStockMax = prov.stockMaxFilter ?? prov.maxStock;
     RangeValues stockRange = RangeValues(
       tempStockMin.toDouble(),
       tempStockMax.toDouble(),
     );
-    DateTimeRange? pickedDateRange;
 
+    DateTimeRange? pickedDateRange;
     if (prov.dateFromFilter != null || prov.dateToFilter != null) {
-      final from = prov.dateFromFilter ?? prov.earliestDate ?? DateTime.now();
+      final from = prov.dateFromFilter ?? prov.earliestDate ?? DateTime(2000);
       final to = prov.dateToFilter ?? prov.latestDate ?? DateTime.now();
       pickedDateRange = DateTimeRange(start: from, end: to);
     }
@@ -153,17 +153,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
                             ],
                           ),
                           const SizedBox(height: 12),
-
                           Text(
                             'Price Range (\$${priceRange.start.toStringAsFixed(2)} - \$${priceRange.end.toStringAsFixed(2)})',
                           ),
                           RangeSlider(
                             values: priceRange,
                             min: prov.minPrice,
-                            max:
-                                prov.maxPrice > prov.minPrice
-                                    ? prov.maxPrice
-                                    : prov.minPrice + 1,
+                            max: prov.maxPrice,
                             divisions: 50,
                             labels: RangeLabels(
                               '\$${priceRange.start.toStringAsFixed(2)}',
@@ -172,18 +168,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
                             onChanged: (v) => setState(() => priceRange = v),
                           ),
                           const SizedBox(height: 12),
-
                           Text(
                             'Stock Range (${stockRange.start.toInt()} - ${stockRange.end.toInt()})',
                           ),
                           RangeSlider(
                             values: stockRange,
                             min: prov.minStock.toDouble(),
-                            max:
-                                prov.maxStock.toDouble() >
-                                        prov.minStock.toDouble()
-                                    ? prov.maxStock.toDouble()
-                                    : prov.minStock.toDouble() + 1,
+                            max: prov.maxStock.toDouble(),
                             divisions:
                                 (prov.maxStock - prov.minStock) > 0
                                     ? (prov.maxStock - prov.minStock)
@@ -195,7 +186,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
                             onChanged: (v) => setState(() => stockRange = v),
                           ),
                           const SizedBox(height: 12),
-
                           const Text('Created Date Range'),
                           const SizedBox(height: 8),
                           Row(
@@ -231,7 +221,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
                               ),
                             ],
                           ),
-
                           const SizedBox(height: 16),
                           Row(
                             children: [
@@ -281,12 +270,18 @@ class _ProductListScreenState extends State<ProductListScreen> {
     );
   }
 
-  Future<void> _exportCsv(List items) async {
+  Future<void> _exportCsv(List<Product> items) async {
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No products to export')));
+      return;
+    }
     try {
       final downloadsPath = await _getDownloadsPath();
       final fileName = 'products_${DateTime.now().millisecondsSinceEpoch}.csv';
       final path = '$downloadsPath/$fileName';
-      
+
       final headers = ['ID', 'Name', 'Price', 'Stock', 'CreatedAt'];
       final rows =
           items
@@ -294,9 +289,12 @@ class _ProductListScreenState extends State<ProductListScreen> {
                 (p) => [
                   p.id ?? '',
                   p.name,
-                  (p.price).toStringAsFixed(2),
+                  // "Prettier" CSV data
+                  '\$${(p.price).toStringAsFixed(2)}',
                   p.stock,
-                  p.createdAt?.toIso8601String() ?? '',
+                  p.createdAt != null
+                      ? DateFormat.yMd().add_Hms().format(p.createdAt!)
+                      : 'N/A',
                 ],
               )
               .toList();
@@ -304,12 +302,18 @@ class _ProductListScreenState extends State<ProductListScreen> {
       final file = File(path);
       await file.writeAsString(csvStr);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
+
+      // --- New Snackbar with "Open" Button ---
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('CSV saved to Downloads/$fileName'),
-          duration: const Duration(seconds: 4),
+          duration: const Duration(seconds: 10),
+          action: SnackBarAction(
+            label: 'OPEN',
+            onPressed: () {
+              OpenFilex.open(path);
+            },
+          ),
         ),
       );
     } catch (e) {
@@ -320,19 +324,74 @@ class _ProductListScreenState extends State<ProductListScreen> {
     }
   }
 
-  Future<void> _exportPdf(List items) async {
+  Future<void> _exportPdf(List<Product> items) async {
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No products to export')));
+      return;
+    }
     try {
+      // --- Create "Prettier" PDF ---
       final PdfDocument doc = PdfDocument();
-      final page = doc.pages.add();
+      final PdfPage page = doc.pages.add();
+      final Size pageSize = page.getClientSize();
 
+      // 1. Add Title
+      page.graphics.drawString(
+        'Product Report',
+        PdfStandardFont(PdfFontFamily.helvetica, 20, style: PdfFontStyle.bold),
+        bounds: Rect.fromLTWH(0, 0, pageSize.width, 30),
+        format: PdfStringFormat(alignment: PdfTextAlignment.center),
+      );
+
+      // 2. Add Subtitle
+      page.graphics.drawString(
+        'Generated on: ${DateFormat.yMd().add_Hms().format(DateTime.now())}',
+        PdfStandardFont(PdfFontFamily.helvetica, 12),
+        bounds: Rect.fromLTWH(0, 30, pageSize.width, 20),
+        format: PdfStringFormat(alignment: PdfTextAlignment.center),
+      );
+
+      // 3. Create Styled Grid
       final PdfGrid grid = PdfGrid();
-      grid.columns.add(count: 4);
+      grid.columns.add(count: 5); // Added 'Created At' column
       grid.headers.add(1);
       final PdfGridRow header = grid.headers[0];
       header.cells[0].value = 'ID';
       header.cells[1].value = 'Name';
       header.cells[2].value = 'Price';
       header.cells[3].value = 'Stock';
+      header.cells[4].value = 'Created At';
+
+      // 4. Apply Header Style
+      final PdfGridCellStyle headerStyle = PdfGridCellStyle(
+        backgroundBrush: PdfSolidBrush(PdfColor(37, 99, 235)), // Primary Blue
+        textBrush: PdfBrushes.white,
+        font: PdfStandardFont(
+          PdfFontFamily.helvetica,
+          10,
+          style: PdfFontStyle.bold,
+        ),
+        format: PdfStringFormat(
+          alignment: PdfTextAlignment.center,
+          lineAlignment: PdfVerticalAlignment.middle,
+        ),
+      );
+      for (int i = 0; i < header.cells.count; i++) {
+        header.cells[i].style = headerStyle;
+      }
+
+      // 5. Populate Rows with Zebra Striping
+      final PdfGridCellStyle evenRowStyle = PdfGridCellStyle(
+        backgroundBrush: PdfSolidBrush(PdfColor(248, 250, 252)), // Light gray
+      );
+      final PdfStringFormat rightAlign = PdfStringFormat(
+        alignment: PdfTextAlignment.right,
+      );
+      final PdfStringFormat centerAlign = PdfStringFormat(
+        alignment: PdfTextAlignment.center,
+      );
 
       for (var p in items) {
         final r = grid.rows.add();
@@ -340,16 +399,58 @@ class _ProductListScreenState extends State<ProductListScreen> {
         r.cells[1].value = p.name ?? '';
         r.cells[2].value = '\$${(p.price ?? 0).toStringAsFixed(2)}';
         r.cells[3].value = (p.stock ?? 0).toString();
+        r.cells[4].value =
+            p.createdAt != null ? DateFormat.yMd().format(p.createdAt!) : 'N/A';
+
+        // Apply zebra stripe
+        if (items.indexOf(p) % 2 == 0) {
+          r.style = evenRowStyle;
+        }
+
+        // *** FIX: Apply stringFormat directly to the cell, not the style ***
+        r.cells[0].stringFormat = centerAlign;
+        r.cells[2].stringFormat = rightAlign;
+        r.cells[3].stringFormat = centerAlign;
+        r.cells[4].stringFormat = centerAlign;
       }
 
-      final Size pageSize = page.getClientSize();
-      grid.draw(
+      // 6. Set column widths
+      grid.columns[0].width = 40; // ID
+      grid.columns[1].width = 150; // Name
+      grid.columns[2].width = 80; // Price
+      grid.columns[3].width = 60; // Stock
+
+      // 7. Draw the grid on the page
+      final PdfLayoutResult? gridResult = grid.draw(
         page: page,
-        bounds: Rect.fromLTWH(0, 0, pageSize.width, pageSize.height),
+        bounds: Rect.fromLTWH(0, 60, pageSize.width, pageSize.height - 60),
+        format: PdfLayoutFormat(layoutType: PdfLayoutType.paginate),
       );
 
+      // 8. Add Footer
+      if (gridResult != null) {
+        page.graphics.drawString(
+          'Total Products: ${items.length}',
+          PdfStandardFont(
+            PdfFontFamily.helvetica,
+            10,
+            style: PdfFontStyle.bold,
+          ),
+          bounds: Rect.fromLTWH(
+            0,
+            gridResult.bounds.bottom + 10,
+            pageSize.width - 10,
+            20,
+          ),
+          format: PdfStringFormat(alignment: PdfTextAlignment.right),
+        );
+      }
+
+      // 9. Save the document
       final bytes = await doc.save();
       doc.dispose();
+
+      // --- End Prettier PDF ---
 
       final downloadsPath = await _getDownloadsPath();
       final fileName = 'products_${DateTime.now().millisecondsSinceEpoch}.pdf';
@@ -357,19 +458,37 @@ class _ProductListScreenState extends State<ProductListScreen> {
       final file = File(path);
       await file.writeAsBytes(bytes);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
+
+      // --- New Professional Snackbar ---
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('PDF saved to Downloads/$fileName'),
-          duration: const Duration(seconds: 4),
+          content: Text(
+            'CSV saved to Downloads/$fileName',
+            style: const TextStyle(color: Colors.white),
+          ),
+          duration: const Duration(seconds: 10),
+          backgroundColor: Theme.of(context).colorScheme.primary, // Blue bg
+          action: SnackBarAction(
+            backgroundColor: Colors.white,
+            label: 'OPEN',
+            textColor: const Color.fromARGB(255, 56, 12, 176), // White text
+            onPressed: () {
+              OpenFilex.open(path);
+            },
+          ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('PDF export failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'CSV export failed: $e',
+            style: const TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -381,31 +500,71 @@ class _ProductListScreenState extends State<ProductListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Products'),
+        title: const Text('List Products'),
         elevation: 2,
         actions: [
-          PopupMenuButton<String>(
-            onSelected: (v) async {
-              final prov = Provider.of<ProductProvider>(context, listen: false);
-              final items = prov.paginatedProducts;
-              if (v == 'csv') await _exportCsv(items);
-              if (v == 'pdf') await _exportPdf(items);
+          Consumer<ProductProvider>(
+            builder: (context, prov, _) {
+              if (prov.isExporting) {
+                return const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 3,
+                    ),
+                  ),
+                );
+              }
+              return PopupMenuButton<String>(
+                onSelected: (v) async {
+                  final prov = Provider.of<ProductProvider>(
+                    context,
+                    listen: false,
+                  );
+                  final List<Product> itemsToExport =
+                      await prov.fetchAllForExport();
+
+                  if (itemsToExport.isEmpty && prov.error == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('No items to export')),
+                    );
+                    return;
+                  }
+
+                  if (v == 'csv') await _exportCsv(itemsToExport);
+                  if (v == 'pdf') await _exportPdf(itemsToExport);
+                },
+                itemBuilder:
+                    (_) => const [
+                      PopupMenuItem(
+                        value: 'pdf',
+                        child: Text('Export PDF (All)'),
+                      ),
+                      PopupMenuItem(
+                        value: 'csv',
+                        child: Text('Export CSV (All)'),
+                      ),
+                    ],
+                icon: const Icon(Icons.download_rounded),
+              );
             },
-            itemBuilder:
-                (_) => const [
-                  PopupMenuItem(value: 'pdf', child: Text('Export PDF')),
-                  PopupMenuItem(value: 'csv', child: Text('Export CSV')),
-                ],
-            icon: const Icon(Icons.download_rounded),
           ),
         ],
       ),
       body: SafeArea(
         child: Consumer<ProductProvider>(
           builder: (context, prov, _) {
-            if (prov.loading && prov.products.isEmpty) {
-              return const Center(child: CircularProgressIndicator());
+            // *** UPDATED: Show Skeleton Loader ***
+            if (prov.isInitialLoading && prov.products.isEmpty) {
+              return ListView.builder(
+                itemCount: 8, // Show 8 skeleton cards
+                itemBuilder: (context, index) => const ProductTileSkeleton(),
+              );
             }
+
             if (prov.error != null && prov.products.isEmpty) {
               return Center(
                 child: Padding(
@@ -442,15 +601,12 @@ class _ProductListScreenState extends State<ProductListScreen> {
                         prefixIcon: const Icon(Icons.search),
                         hintText: 'Search products...',
                         suffixIcon:
-                            _searchController.text.isNotEmpty
+                            prov.searchTerm.isNotEmpty
                                 ? IconButton(
                                   icon: const Icon(Icons.clear),
                                   onPressed: () {
                                     _searchController.clear();
-                                    Provider.of<ProductProvider>(
-                                      context,
-                                      listen: false,
-                                    ).setSearchTerm('');
+                                    prov.setSearchTerm('');
                                   },
                                 )
                                 : null,
@@ -459,6 +615,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                     ),
                   ),
 
+                  // Sort and Filter Chips
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: Row(
@@ -486,7 +643,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                   : null,
                           onSelected: (_) => prov.setSort(SortBy.none),
                         ),
-
                         const SizedBox(width: 8),
                         ChoiceChip(
                           label: Row(
@@ -501,8 +657,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
                               if (prov.sortBy == SortBy.price)
                                 Icon(
                                   prov.sortAsc
-                                      ? Icons.arrow_upward
-                                      : Icons.arrow_downward,
+                                      ? Icons.arrow_downward
+                                      : Icons.arrow_upward,
                                   size: 16,
                                   color: Colors.white,
                                 ),
@@ -528,7 +684,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                         : true,
                               ),
                         ),
-
                         const SizedBox(width: 8),
                         ChoiceChip(
                           label: Row(
@@ -543,8 +698,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
                               if (prov.sortBy == SortBy.stock)
                                 Icon(
                                   prov.sortAsc
-                                      ? Icons.arrow_upward
-                                      : Icons.arrow_downward,
+                                      ? Icons.arrow_downward
+                                      : Icons.arrow_upward,
                                   size: 16,
                                   color: Colors.white,
                                 ),
@@ -570,32 +725,65 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                         : true,
                               ),
                         ),
-
                         const Spacer(),
-                        TextButton.icon(
-                          onPressed: _showFilterSheet,
-                          icon: Icon(
-                            Icons.filter_list,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          label: Text(
-                            'Filters',
-                            style: TextStyle(
+                        // --- UPDATED FILTER BUTTON ---
+                        // We use a Consumer here to check areFiltersActive
+                        Consumer<ProductProvider>(
+                          builder: (context, prov, child) {
+                            final bool filtersActive = prov.areFiltersActive;
+
+                            // If filters are active, show a "Clear" button
+                            if (filtersActive) {
+                              return TextButton(
+                                onPressed: prov.clearFilters,
+                                style: TextButton.styleFrom(
+                                  foregroundColor:
+                                      Theme.of(context).colorScheme.error,
+                                ),
+                                child: Row(
+                                  children: const [
+                                    Icon(Icons.clear, size: 18),
+                                    SizedBox(width: 4),
+                                    Text('Clear'),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            // Otherwise, show the normal "Filters" button
+                            // This is the child we passed in
+                            return child!;
+                          },
+                          // This child is the original TextButton.icon
+                          // It's passed into the builder so it doesn't rebuild
+                          child: TextButton.icon(
+                            onPressed: _showFilterSheet,
+                            icon: Icon(
+                              Icons.filter_list,
                               color: Theme.of(context).colorScheme.primary,
                             ),
-                          ),
-                          style: TextButton.styleFrom(
-                            foregroundColor:
-                                Theme.of(context).colorScheme.primary,
+                            label: Text(
+                              'Filters',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor:
+                                  Theme.of(context).colorScheme.primary,
+                            ),
                           ),
                         ),
+
+                        // --- END UPDATED FILTER BUTTON ---
                       ],
                     ),
                   ),
 
+                  // The List
                   Expanded(
                     child:
-                        prov.paginatedProducts.isEmpty
+                        prov.products.isEmpty
                             ? Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -617,7 +805,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                   const SizedBox(height: 8),
                                   Text(
                                     _searchController.text.isNotEmpty
-                                        ? 'Try a different search'
+                                        ? 'Try a different search or filters'
                                         : 'Add your first product',
                                     style:
                                         Theme.of(context).textTheme.bodySmall,
@@ -629,14 +817,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
                               controller: _scrollController,
                               physics: const AlwaysScrollableScrollPhysics(),
                               itemCount:
-                                  prov.paginatedProducts.length +
-                                  (prov.hasMore ? 1 : 0),
+                                  prov.products.length + (prov.hasMore ? 1 : 0),
                               itemBuilder: (context, index) {
-                                final list = prov.paginatedProducts;
+                                final list = prov.products;
                                 if (index >= list.length) {
                                   return const Padding(
                                     padding: EdgeInsets.symmetric(
-                                      vertical: 16.0,
+                                      vertical: 24.0,
                                     ),
                                     child: Center(
                                       child: CircularProgressIndicator(),
@@ -647,9 +834,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                 return ProductTile(
                                   product: p,
                                   onEdit: (prod) async {
-                                    final changed = await Navigator.of(
-                                      context,
-                                    ).push<bool>(
+                                    // *** UPDATED: No refresh call needed ***
+                                    await Navigator.of(context).push<bool>(
                                       MaterialPageRoute(
                                         builder:
                                             (_) => AddEditProductScreen(
@@ -657,14 +843,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                             ),
                                       ),
                                     );
-                                    if (changed == true) {
-                                      await Provider.of<ProductProvider>(
-                                        context,
-                                        listen: false,
-                                      ).fetchProducts();
-                                    }
                                   },
                                   onDelete: (prod) async {
+                                    // *** UPDATED: No refresh call needed ***
                                     final ok =
                                         await Provider.of<ProductProvider>(
                                           context,
@@ -699,15 +880,10 @@ class _ProductListScreenState extends State<ProductListScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
-          final created = await Navigator.of(context).push<bool>(
+          // *** UPDATED: No refresh call needed ***
+          await Navigator.of(context).push<bool>(
             MaterialPageRoute(builder: (_) => const AddEditProductScreen()),
           );
-          if (created == true) {
-            await Provider.of<ProductProvider>(
-              context,
-              listen: false,
-            ).fetchProducts();
-          }
         },
         icon: const Icon(Icons.add),
         label: const Text('New Product'),
