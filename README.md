@@ -33,4 +33,4 @@
 
 * Open lib/services/api_service.dart and change the baseUrl to point to your server (example: http://10.0.2.2:3000/api for Android).
 
-  Run : `flutter run`
+Run : `flutter run`
