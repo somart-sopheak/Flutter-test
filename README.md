@@ -1,4 +1,4 @@
-- Project Summary
+                                                        Project Summary
   This is a product management app. It uses Flutter for the app , Express.js for the server and Database uses MSSQL.
 
 - App Features (Flutter)
