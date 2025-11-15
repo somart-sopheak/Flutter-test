@@ -1,0 +1,8 @@
+[build]
+builder = "nixpacks"
+
+[build.nixpacks]
+workspace = ["backend_v2"]
+
+[start]
+command = "npm start --prefix back"
