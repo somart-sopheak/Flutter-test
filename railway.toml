@@ -5,4 +5,4 @@ builder = "nixpacks"
 workspace = ["backend_v2"]
 
 [start]
-command = "npm start --prefix back"
+command = "npm start --prefix backend_v2"
