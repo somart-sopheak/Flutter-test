@@ -1,4 +1,4 @@
-                                                        Project Summary
+                  
   This is a product management app. It uses Flutter for the app , Express.js for the server and Database uses MSSQL.
 
 - App Features (Flutter)
@@ -23,14 +23,14 @@
 
 * Server (backend_v2):
 
-  Run : npm install
+  Run : `npm install`
 
-  Run : npm run dev
+  Run : `npm run dev`
 
 - App (flutter_product):
 
-  Run : flutter pub get
+  Run : `flutter pub get`
 
 * Open lib/services/api_service.dart and change the baseUrl to point to your server (example: http://10.0.2.2:3000/api for Android).
 
-  Run : flutter run
+  Run : `flutter run`
