@@ -1,7 +1,7 @@
                   
   This is a product management app. It uses Flutter for the app , Express.js for the server and Database uses MSSQL.
 
-- App Features (Flutter)
+### App Features (Flutter)
 
 * Add, Edit, Delete Products: You can create, read, update, and delete products.
 
@@ -13,21 +13,21 @@
 
 * Export: You can save the product list as a CSV or PDF file.
 
-- Server Features (Express.js)
+### Server Features (Express.js)
 
-* API: An Express.js server that handles requests from the app.
+* API: An Express.js server with cors that handles requests from the app.
 
-* Database: Uses MSSQL to store product data.
+### Database: Uses MSSQL to store product data.
 
 - How to Run
 
-* Server (backend_v2):
+### Server (backend_v2):
 
   Run : `npm install`
 
   Run : `npm run dev`
 
-- App (flutter_product):
+### App (flutter_product):
 
   Run : `flutter pub get`
 
