@@ -1,3 +1,5 @@
+// lib/presentation/screens/add_edit_product_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/product.dart';
@@ -43,9 +45,10 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
     final price = double.parse(_priceCtrl.text.trim());
     final stock = int.parse(_stockCtrl.text.trim());
     final prov = Provider.of<ProductProvider>(context, listen: false);
-    bool ok;
+    bool ok = false; // Default to false
+
     if (widget.product == null) {
-      // Confirm before creating
+      // --- This is ADD logic (unchanged) ---
       final confirm = await showDialog<bool>(
         context: context,
         builder:
@@ -77,6 +80,22 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
         ),
       );
     } else {
+      // --- This is EDIT logic (MODIFIED) ---
+
+      // --- NEW: Check if anything actually changed ---
+      final bool hasChanged = name != widget.product!.name ||
+          price != widget.product!.price ||
+          stock != widget.product!.stock;
+
+      if (!hasChanged) {
+        if (!mounted) return;
+        // --- NEW: Pop with a special value ---
+        Navigator.of(context).pop('nothing_changed');
+        return; // Stop execution
+      }
+      // --- END NEW CHECK ---
+
+      // If it *has* changed, proceed as normal
       final updated = widget.product!.copyWith(
         name: name,
         price: price,
@@ -84,11 +103,14 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
       );
       ok = await prov.updateProduct(updated);
     }
+
+    // This logic handles the 'ok' variable from both add and edit blocks
     if (ok) {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } else {
       if (!mounted) return;
+      // This will only show if the provider call itself fails
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Action failed: ${prov.error}'),

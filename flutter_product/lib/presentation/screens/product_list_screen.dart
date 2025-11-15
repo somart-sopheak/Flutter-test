@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
@@ -22,10 +23,103 @@ class ProductListScreen extends StatefulWidget {
   State<ProductListScreen> createState() => _ProductListScreenState();
 }
 
-class _ProductListScreenState extends State<ProductListScreen> {
+class _ProductListScreenState extends State<ProductListScreen>
+    with TickerProviderStateMixin {
+  // Needed for animation
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
   final ScrollController _scrollController = ScrollController();
+
+  // --- NEW: State variable to control button visibility ---
+  bool _showScrollTopButton = false;
+
+  void _showTopNotification(
+    String message,
+    Color backgroundColor,
+    IconData iconData,
+  ) {
+    final overlay = Overlay.of(context);
+    OverlayEntry? overlayEntry;
+
+    final controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350), // Slide-in duration
+    );
+
+    final animation = Tween<Offset>(
+      begin: const Offset(0.0, -1.0),
+      end: const Offset(0.0, 0.0),
+    ).animate(
+      CurvedAnimation(parent: controller, curve: Curves.easeInOutCubic),
+    );
+
+    overlayEntry = OverlayEntry(
+      builder: (context) {
+        return Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 16.0, // Status bar + 16
+              left: 16.0, // Horizontal space
+              right: 16.0, // Horizontal space
+            ),
+            child: SlideTransition(
+              position: animation,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: backgroundColor,
+                    borderRadius: BorderRadius.circular(
+                      12,
+                    ), // Professional rounded corners
+                    boxShadow: const [
+                      BoxShadow(
+                        // Professional shadow
+                        color: Colors.black26,
+                        blurRadius: 10,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(iconData, color: Colors.white, size: 20),
+                      const SizedBox(width: 12),
+                      Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(overlayEntry);
+    controller.forward();
+
+    Timer(const Duration(seconds: 3), () {
+      controller.reverse().then((_) {
+        overlayEntry?.remove();
+        controller.dispose();
+      });
+    });
+  }
 
   @override
   void initState() {
@@ -34,18 +128,37 @@ class _ProductListScreenState extends State<ProductListScreen> {
       Provider.of<ProductProvider>(context, listen: false).fetchProducts();
     });
     _scrollController.addListener(_onScroll);
+    // --- NEW: Add listener for the scroll-to-top button ---
+    _scrollController.addListener(_updateScrollTopButtonVisibility);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _debounce?.cancel();
+    // --- NEW: Remove listener ---
+    _scrollController.removeListener(_updateScrollTopButtonVisibility);
     _scrollController.dispose();
     super.dispose();
   }
 
+  // --- NEW: Function to show/hide the button based on scroll offset ---
+  void _updateScrollTopButtonVisibility() {
+    // Show button if scrolled down more than 300 pixels
+    if (_scrollController.offset > 300 && !_showScrollTopButton) {
+      setState(() {
+        _showScrollTopButton = true;
+      });
+    } else if (_scrollController.offset <= 300 && _showScrollTopButton) {
+      setState(() {
+        _showScrollTopButton = false;
+      });
+    }
+  }
+
   void _onScroll() {
     final prov = Provider.of<ProductProvider>(context, listen: false);
+    // This logic is for pagination
     if (_scrollController.position.maxScrollExtent -
             _scrollController.position.pixels <=
         200) {
@@ -96,6 +209,15 @@ class _ProductListScreenState extends State<ProductListScreen> {
       pickedDateRange = DateTimeRange(start: from, end: to);
     }
 
+    final _priceMinCtrl = TextEditingController(
+      text: tempMin.toStringAsFixed(2),
+    );
+    final _priceMaxCtrl = TextEditingController(
+      text: tempMax.toStringAsFixed(2),
+    );
+    final _stockMinCtrl = TextEditingController(text: tempStockMin.toString());
+    final _stockMaxCtrl = TextEditingController(text: tempStockMax.toString());
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -139,22 +261,107 @@ class _ProductListScreenState extends State<ProductListScreen> {
                               ),
                               TextButton(
                                 onPressed: () {
-                                  prov.setPriceFilter(null, null);
-                                  prov.setStockFilter(null, null);
-                                  prov.setDateFilter(null, null);
+                                  setState(() {
+                                    _priceMinCtrl.text = prov.minPrice
+                                        .toStringAsFixed(2);
+                                    _priceMaxCtrl.text = prov.maxPrice
+                                        .toStringAsFixed(2);
+                                    _stockMinCtrl.text =
+                                        prov.minStock.toString();
+                                    _stockMaxCtrl.text =
+                                        prov.maxStock.toString();
+                                    priceRange = RangeValues(
+                                      prov.minPrice,
+                                      prov.maxPrice,
+                                    );
+                                    stockRange = RangeValues(
+                                      prov.minStock.toDouble(),
+                                      prov.maxStock.toDouble(),
+                                    );
+                                    pickedDateRange = null;
+                                  });
+                                  prov.clearFilters();
                                   Navigator.of(context).pop();
                                 },
                                 style: TextButton.styleFrom(
                                   foregroundColor:
                                       Theme.of(context).colorScheme.primary,
                                 ),
-                                child: const Text('Clear'),
+                                child: const Text('Clear All'),
                               ),
                             ],
                           ),
                           const SizedBox(height: 12),
-                          Text(
-                            'Price Range (\$${priceRange.start.toStringAsFixed(2)} - \$${priceRange.end.toStringAsFixed(2)})',
+                          const Text('Price Range'),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _priceMinCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'^\d+\.?\d{0,2}'),
+                                    ),
+                                  ],
+                                  decoration: const InputDecoration(
+                                    labelText: 'Min',
+                                    prefixText: '\$ ',
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) {
+                                    final pMin = double.tryParse(value);
+                                    if (pMin != null &&
+                                        pMin >= prov.minPrice &&
+                                        pMin <= priceRange.end) {
+                                      setState(() {
+                                        priceRange = RangeValues(
+                                          pMin,
+                                          priceRange.end,
+                                        );
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _priceMaxCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'^\d+\.?\d{0,2}'),
+                                    ),
+                                  ],
+                                  decoration: const InputDecoration(
+                                    labelText: 'Max',
+                                    prefixText: '\$ ',
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) {
+                                    final pMax = double.tryParse(value);
+                                    if (pMax != null &&
+                                        pMax <= prov.maxPrice &&
+                                        pMax >= priceRange.start) {
+                                      setState(() {
+                                        priceRange = RangeValues(
+                                          priceRange.start,
+                                          pMax,
+                                        );
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
                           RangeSlider(
                             values: priceRange,
@@ -165,11 +372,74 @@ class _ProductListScreenState extends State<ProductListScreen> {
                               '\$${priceRange.start.toStringAsFixed(2)}',
                               '\$${priceRange.end.toStringAsFixed(2)}',
                             ),
-                            onChanged: (v) => setState(() => priceRange = v),
+                            onChanged:
+                                (v) => setState(() {
+                                  priceRange = v;
+                                  _priceMinCtrl.text = v.start.toStringAsFixed(
+                                    2,
+                                  );
+                                  _priceMaxCtrl.text = v.end.toStringAsFixed(2);
+                                }),
                           ),
                           const SizedBox(height: 12),
-                          Text(
-                            'Stock Range (${stockRange.start.toInt()} - ${stockRange.end.toInt()})',
+                          const Text('Stock Range'),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _stockMinCtrl,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                  ],
+                                  decoration: const InputDecoration(
+                                    labelText: 'Min',
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) {
+                                    final sMin = int.tryParse(value);
+                                    if (sMin != null &&
+                                        sMin >= prov.minStock &&
+                                        sMin <= stockRange.end) {
+                                      setState(() {
+                                        stockRange = RangeValues(
+                                          sMin.toDouble(),
+                                          stockRange.end,
+                                        );
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _stockMaxCtrl,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                  ],
+                                  decoration: const InputDecoration(
+                                    labelText: 'Max',
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) {
+                                    final sMax = int.tryParse(value);
+                                    if (sMax != null &&
+                                        sMax <= prov.maxStock &&
+                                        sMax >= stockRange.start) {
+                                      setState(() {
+                                        stockRange = RangeValues(
+                                          stockRange.start,
+                                          sMax.toDouble(),
+                                        );
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
                           RangeSlider(
                             values: stockRange,
@@ -183,7 +453,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
                               '${stockRange.start.toInt()}',
                               '${stockRange.end.toInt()}',
                             ),
-                            onChanged: (v) => setState(() => stockRange = v),
+                            onChanged:
+                                (v) => setState(() {
+                                  stockRange = v;
+                                  _stockMinCtrl.text =
+                                      v.start.toInt().toString();
+                                  _stockMaxCtrl.text = v.end.toInt().toString();
+                                }),
                           ),
                           const SizedBox(height: 12),
                           const Text('Created Date Range'),
@@ -268,6 +544,11 @@ class _ProductListScreenState extends State<ProductListScreen> {
         );
       },
     );
+
+    _priceMinCtrl.dispose();
+    _priceMaxCtrl.dispose();
+    _stockMinCtrl.dispose();
+    _stockMaxCtrl.dispose();
   }
 
   Future<void> _exportCsv(List<Product> items) async {
@@ -289,7 +570,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
                 (p) => [
                   p.id ?? '',
                   p.name,
-                  // "Prettier" CSV data
                   '\$${(p.price).toStringAsFixed(2)}',
                   p.stock,
                   p.createdAt != null
@@ -303,13 +583,23 @@ class _ProductListScreenState extends State<ProductListScreen> {
       await file.writeAsString(csvStr);
       if (!mounted) return;
 
-      // --- New Snackbar with "Open" Button ---
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('CSV saved to Downloads/$fileName'),
-          duration: const Duration(seconds: 10),
+          duration: Duration(seconds: 5),
+
+          //   action: SnackBarAction(
+          //     label: 'OPEN',
+          //     onPressed: () {
+          //       OpenFilex.open(path);
+          //     },
+          //   ),
+          // ),
+          backgroundColor: Colors.blue,
           action: SnackBarAction(
+            backgroundColor: Colors.white,
             label: 'OPEN',
+            textColor: const Color.fromARGB(255, 56, 12, 176),
             onPressed: () {
               OpenFilex.open(path);
             },
@@ -332,30 +622,23 @@ class _ProductListScreenState extends State<ProductListScreen> {
       return;
     }
     try {
-      // --- Create "Prettier" PDF ---
       final PdfDocument doc = PdfDocument();
       final PdfPage page = doc.pages.add();
       final Size pageSize = page.getClientSize();
-
-      // 1. Add Title
       page.graphics.drawString(
         'Product Report',
         PdfStandardFont(PdfFontFamily.helvetica, 20, style: PdfFontStyle.bold),
         bounds: Rect.fromLTWH(0, 0, pageSize.width, 30),
         format: PdfStringFormat(alignment: PdfTextAlignment.center),
       );
-
-      // 2. Add Subtitle
       page.graphics.drawString(
         'Generated on: ${DateFormat.yMd().add_Hms().format(DateTime.now())}',
         PdfStandardFont(PdfFontFamily.helvetica, 12),
         bounds: Rect.fromLTWH(0, 30, pageSize.width, 20),
         format: PdfStringFormat(alignment: PdfTextAlignment.center),
       );
-
-      // 3. Create Styled Grid
       final PdfGrid grid = PdfGrid();
-      grid.columns.add(count: 5); // Added 'Created At' column
+      grid.columns.add(count: 5);
       grid.headers.add(1);
       final PdfGridRow header = grid.headers[0];
       header.cells[0].value = 'ID';
@@ -363,10 +646,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
       header.cells[2].value = 'Price';
       header.cells[3].value = 'Stock';
       header.cells[4].value = 'Created At';
-
-      // 4. Apply Header Style
       final PdfGridCellStyle headerStyle = PdfGridCellStyle(
-        backgroundBrush: PdfSolidBrush(PdfColor(37, 99, 235)), // Primary Blue
+        backgroundBrush: PdfSolidBrush(PdfColor(37, 99, 235)),
         textBrush: PdfBrushes.white,
         font: PdfStandardFont(
           PdfFontFamily.helvetica,
@@ -381,10 +662,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
       for (int i = 0; i < header.cells.count; i++) {
         header.cells[i].style = headerStyle;
       }
-
-      // 5. Populate Rows with Zebra Striping
       final PdfGridCellStyle evenRowStyle = PdfGridCellStyle(
-        backgroundBrush: PdfSolidBrush(PdfColor(248, 250, 252)), // Light gray
+        backgroundBrush: PdfSolidBrush(PdfColor(248, 250, 252)),
       );
       final PdfStringFormat rightAlign = PdfStringFormat(
         alignment: PdfTextAlignment.right,
@@ -392,7 +671,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
       final PdfStringFormat centerAlign = PdfStringFormat(
         alignment: PdfTextAlignment.center,
       );
-
       for (var p in items) {
         final r = grid.rows.add();
         r.cells[0].value = (p.id ?? '').toString();
@@ -401,33 +679,23 @@ class _ProductListScreenState extends State<ProductListScreen> {
         r.cells[3].value = (p.stock ?? 0).toString();
         r.cells[4].value =
             p.createdAt != null ? DateFormat.yMd().format(p.createdAt!) : 'N/A';
-
-        // Apply zebra stripe
         if (items.indexOf(p) % 2 == 0) {
           r.style = evenRowStyle;
         }
-
-        // *** FIX: Apply stringFormat directly to the cell, not the style ***
         r.cells[0].stringFormat = centerAlign;
         r.cells[2].stringFormat = rightAlign;
         r.cells[3].stringFormat = centerAlign;
         r.cells[4].stringFormat = centerAlign;
       }
-
-      // 6. Set column widths
-      grid.columns[0].width = 40; // ID
-      grid.columns[1].width = 150; // Name
-      grid.columns[2].width = 80; // Price
-      grid.columns[3].width = 60; // Stock
-
-      // 7. Draw the grid on the page
+      grid.columns[0].width = 40;
+      grid.columns[1].width = 150;
+      grid.columns[2].width = 80;
+      grid.columns[3].width = 60;
       final PdfLayoutResult? gridResult = grid.draw(
         page: page,
         bounds: Rect.fromLTWH(0, 60, pageSize.width, pageSize.height - 60),
         format: PdfLayoutFormat(layoutType: PdfLayoutType.paginate),
       );
-
-      // 8. Add Footer
       if (gridResult != null) {
         page.graphics.drawString(
           'Total Products: ${items.length}',
@@ -445,33 +713,26 @@ class _ProductListScreenState extends State<ProductListScreen> {
           format: PdfStringFormat(alignment: PdfTextAlignment.right),
         );
       }
-
-      // 9. Save the document
       final bytes = await doc.save();
       doc.dispose();
-
-      // --- End Prettier PDF ---
-
       final downloadsPath = await _getDownloadsPath();
       final fileName = 'products_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final path = '$downloadsPath/$fileName';
       final file = File(path);
       await file.writeAsBytes(bytes);
       if (!mounted) return;
-
-      // --- New Professional Snackbar ---
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'CSV saved to Downloads/$fileName',
+            'PDF saved to Downloads/$fileName',
             style: const TextStyle(color: Colors.white),
           ),
-          duration: const Duration(seconds: 10),
-          backgroundColor: Theme.of(context).colorScheme.primary, // Blue bg
+          duration: const Duration(seconds: 5),
+          backgroundColor: Colors.blue,
           action: SnackBarAction(
             backgroundColor: Colors.white,
             label: 'OPEN',
-            textColor: const Color.fromARGB(255, 56, 12, 176), // White text
+            textColor: const Color.fromARGB(255, 56, 12, 176),
             onPressed: () {
               OpenFilex.open(path);
             },
@@ -557,10 +818,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
       body: SafeArea(
         child: Consumer<ProductProvider>(
           builder: (context, prov, _) {
-            // *** UPDATED: Show Skeleton Loader ***
             if (prov.isInitialLoading && prov.products.isEmpty) {
               return ListView.builder(
-                itemCount: 8, // Show 8 skeleton cards
+                itemCount: 8,
                 itemBuilder: (context, index) => const ProductTileSkeleton(),
               );
             }
@@ -614,8 +874,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
                       onChanged: _onSearchChanged,
                     ),
                   ),
-
-                  // Sort and Filter Chips
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: Row(
@@ -726,13 +984,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
                               ),
                         ),
                         const Spacer(),
-                        // --- UPDATED FILTER BUTTON ---
-                        // We use a Consumer here to check areFiltersActive
                         Consumer<ProductProvider>(
                           builder: (context, prov, child) {
                             final bool filtersActive = prov.areFiltersActive;
-
-                            // If filters are active, show a "Clear" button
                             if (filtersActive) {
                               return TextButton(
                                 onPressed: prov.clearFilters,
@@ -749,13 +1003,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                 ),
                               );
                             }
-
-                            // Otherwise, show the normal "Filters" button
-                            // This is the child we passed in
                             return child!;
                           },
-                          // This child is the original TextButton.icon
-                          // It's passed into the builder so it doesn't rebuild
                           child: TextButton.icon(
                             onPressed: _showFilterSheet,
                             icon: Icon(
@@ -774,13 +1023,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
                             ),
                           ),
                         ),
-
-                        // --- END UPDATED FILTER BUTTON ---
                       ],
                     ),
                   ),
-
-                  // The List
                   Expanded(
                     child:
                         prov.products.isEmpty
@@ -834,8 +1079,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                 return ProductTile(
                                   product: p,
                                   onEdit: (prod) async {
-                                    // *** UPDATED: No refresh call needed ***
-                                    await Navigator.of(context).push<bool>(
+                                    final dynamic result = await Navigator.of(
+                                      context,
+                                    ).push(
                                       MaterialPageRoute(
                                         builder:
                                             (_) => AddEditProductScreen(
@@ -843,16 +1089,38 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                             ),
                                       ),
                                     );
+                                    if (!mounted) return;
+
+                                    if (result == true) {
+                                      _showTopNotification(
+                                        'Product updated successfully!',
+                                        Colors.green,
+                                        Icons.check_circle_outline,
+                                      );
+                                    } else if (result == 'nothing_changed') {
+                                      _showTopNotification(
+                                        'Nothing changed',
+                                        Colors.grey,
+                                        Icons.info_outline,
+                                      );
+                                    }
                                   },
                                   onDelete: (prod) async {
-                                    // *** UPDATED: No refresh call needed ***
                                     final ok =
                                         await Provider.of<ProductProvider>(
                                           context,
                                           listen: false,
                                         ).deleteProduct(prod.id!);
-                                    if (!ok) {
-                                      if (!mounted) return;
+
+                                    if (!mounted) return;
+
+                                    if (ok) {
+                                      _showTopNotification(
+                                        'Product deleted successfully!',
+                                        Colors.red,
+                                        Icons.check_circle_outline,
+                                      );
+                                    } else {
                                       ScaffoldMessenger.of(
                                         context,
                                       ).showSnackBar(
@@ -878,16 +1146,50 @@ class _ProductListScreenState extends State<ProductListScreen> {
           },
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          // *** UPDATED: No refresh call needed ***
-          await Navigator.of(context).push<bool>(
-            MaterialPageRoute(builder: (_) => const AddEditProductScreen()),
-          );
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('New Product'),
+      // --- MODIFIED: This is the new FAB structure ---
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // --- NEW: Conditionally build the "Scroll to Top" button ---
+          if (_showScrollTopButton)
+            Column(
+              children: [
+                FloatingActionButton(
+                  onPressed: () {
+                    _scrollController.animateTo(
+                      0.0, // Scroll to the top
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.easeInOut,
+                    );
+                  },
+                  child: const Icon(Icons.arrow_upward),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          // --- END NEW ---
+
+          // The original "New Product" FAB
+          FloatingActionButton.extended(
+            onPressed: () async {
+              final dynamic result = await Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AddEditProductScreen()),
+              );
+              if (result == true && mounted) {
+                _showTopNotification(
+                  'Product created successfully!',
+                  Colors.green,
+                  Icons.check_circle_outline,
+                );
+              }
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('New Product'),
+          ),
+        ],
       ),
+      // --- END MODIFICATION ---
     );
   }
 }
